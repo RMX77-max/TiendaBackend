@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Sucursal;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class ControladorUsuarios extends Controller
     {
         return response()->json([
             'roles' => User::obtenerRolesDisponibles(),
-            'sucursales' => User::obtenerSucursalesDisponibles(),
+            'sucursales' => $this->obtenerSucursalesDisponibles(),
         ]);
     }
 
@@ -44,7 +45,7 @@ class ControladorUsuarios extends Controller
             'nombre_usuario' => ['required', 'string', 'max:50', 'unique:usuarios,nombre_usuario'],
             'contrasena' => ['required', 'string', 'min:8', 'max:100'],
             'rol' => ['required', 'string', Rule::in(array_column(User::obtenerRolesDisponibles(), 'value'))],
-            'sucursal' => ['nullable', 'string', 'max:120', Rule::in(array_column(User::obtenerSucursalesDisponibles(), 'value'))],
+            'sucursal' => ['nullable', 'string', 'max:120', Rule::in(array_column($this->obtenerSucursalesDisponibles(), 'value'))],
             'foto_factura_luz' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
         ]);
 
@@ -137,6 +138,21 @@ class ControladorUsuarios extends Controller
     protected function generarCorreoInterno(string $nombreUsuario): string
     {
         return mb_strtolower(trim($nombreUsuario)).'@puntotecnologico.local';
+    }
+
+    protected function obtenerSucursalesDisponibles(): array
+    {
+        return Sucursal::query()
+            ->where('activa', true)
+            ->orderBy('nombre')
+            ->get()
+            ->map(fn (Sucursal $sucursal) => [
+                'id' => $sucursal->id,
+                'value' => $sucursal->nombre,
+                'label' => $sucursal->nombre,
+            ])
+            ->values()
+            ->all();
     }
 
     protected function formatearUsuario(User $usuario): array

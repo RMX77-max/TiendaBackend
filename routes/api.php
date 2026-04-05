@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\ControladorAutenticacion;
+use App\Http\Controllers\Api\ControladorCatalogos;
+use App\Http\Controllers\Api\ControladorProductos;
+use App\Http\Controllers\Api\ControladorTransferencias;
 use App\Http\Controllers\Api\ControladorUsuarios;
 use Illuminate\Support\Facades\Route;
 
@@ -18,4 +21,26 @@ Route::middleware('autenticar.token')->prefix('usuarios')->group(function () {
     Route::get('/', [ControladorUsuarios::class, 'listar']);
     Route::post('/', [ControladorUsuarios::class, 'registrar']);
     Route::patch('/{usuario}/estado', [ControladorUsuarios::class, 'cambiarEstado']);
+});
+
+Route::middleware('autenticar.token')->prefix('catalogos')->group(function () {
+    Route::get('/productos', [ControladorCatalogos::class, 'obtenerCatalogosProductos']);
+    Route::get('/sucursales', [ControladorCatalogos::class, 'listarSucursales']);
+    Route::post('/marcas', [ControladorCatalogos::class, 'registrarMarca']);
+    Route::post('/categorias', [ControladorCatalogos::class, 'registrarCategoria']);
+});
+
+Route::middleware('autenticar.token')->prefix('productos')->group(function () {
+    Route::get('/formulario', [ControladorProductos::class, 'obtenerFormulario']);
+    Route::get('/', [ControladorProductos::class, 'listar']);
+    Route::get('/{producto}/detalle', [ControladorProductos::class, 'detalle']);
+    Route::post('/', [ControladorProductos::class, 'registrar']);
+    Route::put('/{producto}', [ControladorProductos::class, 'actualizar']);
+    Route::delete('/{producto}', [ControladorProductos::class, 'eliminar']);
+});
+
+Route::middleware('autenticar.token')->prefix('transferencias')->group(function () {
+    Route::get('/solicitudes', [ControladorTransferencias::class, 'listarSolicitudes']);
+    Route::post('/solicitudes', [ControladorTransferencias::class, 'registrarSolicitud']);
+    Route::patch('/solicitudes/{solicitudTransferencia}/responder', [ControladorTransferencias::class, 'responderSolicitud']);
 });

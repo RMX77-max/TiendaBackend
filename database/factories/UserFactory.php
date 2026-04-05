@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Models\Sucursal;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -39,7 +40,7 @@ class UserFactory extends Factory
                 User::ROL_AUXILIAR_ADMINISTRATIVO,
                 User::ROL_GERENTE,
             ]),
-            'sucursal' => fake()->randomElement(User::SUCURSALES),
+            'sucursal' => Sucursal::query()->inRandomOrder()->value('nombre') ?? 'RMA-ADM',
             'foto_factura_luz' => null,
             'activo' => true,
             'remember_token' => Str::random(10),

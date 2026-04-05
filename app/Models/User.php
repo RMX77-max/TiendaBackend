@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -20,15 +21,6 @@ class User extends Authenticatable
     public const ROL_SUPERVISOR_SUCURSAL = 'supervisor_sucursal';
     public const ROL_AUXILIAR_ADMINISTRATIVO = 'auxiliar_administrativo';
     public const ROL_GERENTE = 'gerente';
-    public const SUCURSALES = [
-        'GOLD-MI PC',
-        'GOLD-PUNTO TECNOLOGICO 2',
-        'MEDRANO-OVERCITY 2',
-        'MUNDO ELECTRONICO-OVERCITY 1',
-        'RMA-ADM',
-        'SUPERMALL-MACROCENTER',
-        'TECNOCENTER-PUNTO TECNOLOGICO',
-    ];
 
     /**
      * Los atributos que pueden asignarse masivamente.
@@ -81,14 +73,6 @@ class User extends Authenticatable
             ['value' => self::ROL_SUPERVISOR_SUCURSAL, 'label' => 'Supervisor'],
             ['value' => self::ROL_VENDEDOR, 'label' => 'Vendedor'],
         ];
-    }
-
-    public static function obtenerSucursalesDisponibles(): array
-    {
-        return array_map(
-            fn (string $sucursal) => ['value' => $sucursal, 'label' => $sucursal],
-            self::SUCURSALES,
-        );
     }
 
     public static function obtenerEtiquetaRol(?string $rol): ?string

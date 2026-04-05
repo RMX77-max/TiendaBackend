@@ -15,18 +15,26 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        User::factory()->create([
-            'nombre' => 'Usuario',
-            'apellido' => 'Gerente',
-            'documento_identidad' => '10000001',
-            'nombre_usuario' => 'gerente',
-            'correo_electronico' => 'gerente@puntotecnologico.test',
-            'telefono' => '70000001',
-            'direccion' => 'Oficina central',
-            'contrasena' => 'admin12345',
-            'rol' => User::ROL_GERENTE,
-            'sucursal' => 'RMA-ADM',
-            'activo' => true,
+        $this->call([
+            SucursalSeeder::class,
+            MarcaSeeder::class,
+            CategoriaSeeder::class,
         ]);
+
+        User::query()->updateOrCreate(
+            ['nombre_usuario' => 'gerente'],
+            [
+                'nombre' => 'Usuario',
+                'apellido' => 'Gerente',
+                'documento_identidad' => '10000001',
+                'correo_electronico' => 'gerente@puntotecnologico.test',
+                'telefono' => '70000001',
+                'direccion' => 'Oficina central',
+                'contrasena' => 'admin12345',
+                'rol' => User::ROL_GERENTE,
+                'sucursal' => 'RMA-ADM',
+                'activo' => true,
+            ],
+        );
     }
 }
