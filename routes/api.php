@@ -47,6 +47,12 @@ Route::middleware('autenticar.token')->prefix('compras')->group(function () {
     Route::post('/proveedores', [ControladorCompras::class, 'registrarProveedor']);
     Route::get('/{compra}', [ControladorCompras::class, 'detalle']);
     Route::put('/{compra}', [ControladorCompras::class, 'actualizar']);
+    Route::post('/{compra}/pagos-credito', [ControladorCompras::class, 'registrarPagoCredito']);
+    Route::post('/{compra}/guias', [ControladorCompras::class, 'registrarGuia']);
+    Route::post('/{compra}/recepciones', [ControladorCompras::class, 'registrarRecepcion']);
+    Route::post('/recepciones/{recepcion}/ingresar-inventario', [ControladorCompras::class, 'ingresarRecepcionInventario']);
+    Route::patch('/{compra}/cerrar-incompleto', [ControladorCompras::class, 'cerrarIncompleto']);
+    Route::put('/guias/{guia}', [ControladorCompras::class, 'actualizarGuia']);
 });
 
 Route::middleware('autenticar.token')->prefix('transferencias')->group(function () {

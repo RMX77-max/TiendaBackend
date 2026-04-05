@@ -4,6 +4,8 @@ namespace App\Services\Compras;
 
 use App\Models\Compra;
 use App\Models\CompraDetalle;
+use App\Models\CompraCuota;
+use App\Models\CompraGuia;
 use App\Models\Producto;
 use Illuminate\Support\Collection;
 
@@ -61,17 +63,20 @@ class RecalculadoraCompraService
 
     public function recalcularCompra(Compra $compra): Compra
     {
-        $compra->loadMissing(['detalles', 'abonos']);
+        $compra->loadMissing(['detalles', 'abonos', 'cuotas', 'guias', 'recepciones']);
 
         $totalProductosUsd = $this->redondear($compra->detalles->sum('subtotal_usd'), 4);
         $totalProductosBs = $this->redondear($compra->detalles->sum('subtotal_bs'), 4);
         $totalAbonosUsd = $this->redondear($compra->abonos->sum('abono_usd'), 4);
         $totalAbonosBs = $this->redondear($compra->abonos->sum('abono_bs'), 4);
+        $totalGuiasBs = $this->redondear($compra->guias->sum('monto_bs'), 4);
         $saldoPendienteUsd = max(0, $this->redondear($totalProductosUsd - $totalAbonosUsd, 4));
         $tipoCambioPromedioPedido = $totalProductosUsd > 0
             ? ($totalProductosBs / $totalProductosUsd)
             : 0;
         $saldoPendienteBs = max(0, $this->redondear($saldoPendienteUsd * $tipoCambioPromedioPedido, 4));
+        $estado = $this->determinarEstadoCompra($compra);
+        [$devolucionPendienteUsd, $devolucionPendienteBs] = $this->calcularDevolucionPendiente($compra, $estado);
 
         $compra->forceFill([
             'total_productos_usd' => $totalProductosUsd,
@@ -80,18 +85,55 @@ class RecalculadoraCompraService
             'total_abonos_bs' => $totalAbonosBs,
             'saldo_pendiente_usd' => $saldoPendienteUsd,
             'saldo_pendiente_bs' => $saldoPendienteBs,
-            'devolucion_pendiente_usd' => 0,
-            'devolucion_pendiente_bs' => 0,
-            'estado' => $this->determinarEstadoCompra($compra),
+            'total_guias_usd' => 0,
+            'total_guias_bs' => $totalGuiasBs,
+            'devolucion_pendiente_usd' => $devolucionPendienteUsd,
+            'devolucion_pendiente_bs' => $devolucionPendienteBs,
+            'estado' => $estado,
         ])->save();
 
-        return $compra->fresh(['proveedor', 'detalles.producto', 'abonos.sucursal']);
+        return $compra->fresh(['proveedor', 'detalles.producto', 'abonos.sucursal', 'cuotas', 'guias', 'recepciones.detalles.compraDetalle']);
     }
 
     public function determinarEstadoCompra(Compra $compra): string
     {
+        $compra->loadMissing(['detalles', 'guias', 'recepciones']);
+
+        if ($compra->estado === Compra::ESTADO_CERRADO) {
+            return Compra::ESTADO_CERRADO;
+        }
+
+        if ($compra->estado === Compra::ESTADO_INCOMPLETO) {
+            return Compra::ESTADO_INCOMPLETO;
+        }
+
+        $tieneDetalles = $compra->detalles->isNotEmpty();
+        $totalPendiente = (int) $compra->detalles->sum('cantidad_pendiente');
+        $totalRecibido = (int) $compra->detalles->sum('cantidad_recibida_acumulada');
+        $tieneRecepciones = $compra->recepciones->isNotEmpty();
+        $todasLasRecepcionesIngresadas = $tieneRecepciones &&
+            $compra->recepciones->every(fn ($recepcion) => $recepcion->ingresado_inventario === true);
+
+        if ($tieneDetalles && $totalPendiente === 0) {
+            return $todasLasRecepcionesIngresadas
+                ? Compra::ESTADO_COMPLETADO
+                : Compra::ESTADO_PENDIENTE_INGRESO_INVENTARIO;
+        }
+
+        if ($totalRecibido > 0) {
+            return Compra::ESTADO_PARCIAL;
+        }
+
         if ((int) $compra->tiempo_entrega_dias === 0) {
             return Compra::ESTADO_PENDIENTE_INGRESO_INVENTARIO;
+        }
+
+        if ($compra->guias->contains(fn (CompraGuia $guia) => $guia->estado === CompraGuia::ESTADO_RECOGIDO)) {
+            return Compra::ESTADO_PENDIENTE_RECEPCION;
+        }
+
+        if ($compra->guias->contains(fn (CompraGuia $guia) => $guia->estado === CompraGuia::ESTADO_EN_TRANSITO)) {
+            return Compra::ESTADO_EN_TRANSITO;
         }
 
         return Compra::ESTADO_REGISTRADO;
@@ -143,6 +185,50 @@ class RecalculadoraCompraService
                 ];
             })
             ->values();
+    }
+
+    public function normalizarCuotas(iterable $cuotas, float $totalProductosUsd, float $totalProductosBs): Collection
+    {
+        $tipoCambioPromedioPedido = $totalProductosUsd > 0
+            ? ($totalProductosBs / $totalProductosUsd)
+            : 0;
+
+        return collect($cuotas)
+            ->values()
+            ->map(function (array $cuota, int $indice) use ($tipoCambioPromedioPedido) {
+                $montoUsd = $this->redondear($cuota['monto_usd'] ?? 0, 6);
+                $montoBs = $this->redondear($montoUsd * $tipoCambioPromedioPedido, 6);
+
+                return [
+                    'nro_cuota' => $indice + 1,
+                    'fecha_vencimiento' => $cuota['fecha_vencimiento'],
+                    'tipo_cambio_referencia' => $this->redondear($tipoCambioPromedioPedido, 6),
+                    'monto_usd' => $montoUsd,
+                    'monto_bs' => $montoBs,
+                    'saldo_pendiente_usd' => $montoUsd,
+                    'saldo_pendiente_bs' => $montoBs,
+                    'estado' => CompraCuota::ESTADO_PENDIENTE,
+                    'observaciones' => $cuota['observaciones'] ?? null,
+                ];
+            });
+    }
+
+    protected function calcularDevolucionPendiente(Compra $compra, string $estado): array
+    {
+        if (! in_array($estado, [Compra::ESTADO_INCOMPLETO, Compra::ESTADO_CERRADO], true)) {
+            return [0, 0];
+        }
+
+        $devolucionUsd = $this->redondear(
+            $compra->detalles->sum(fn (CompraDetalle $detalle) => $detalle->cantidad_pendiente * (float) $detalle->precio_unitario_usd),
+            4
+        );
+        $devolucionBs = $this->redondear(
+            $compra->detalles->sum(fn (CompraDetalle $detalle) => $detalle->cantidad_pendiente * (float) $detalle->precio_unitario_bs),
+            4
+        );
+
+        return [$devolucionUsd, $devolucionBs];
     }
 
     protected function redondear(float|int|string $valor, int $precision): float

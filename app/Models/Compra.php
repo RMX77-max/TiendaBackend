@@ -108,4 +108,19 @@ class Compra extends Model
     {
         return $this->hasMany(CompraAbono::class, 'compra_id');
     }
+
+    public function cuotas(): HasMany
+    {
+        return $this->hasMany(CompraCuota::class, 'compra_id');
+    }
+
+    public function guias(): HasMany
+    {
+        return $this->hasMany(CompraGuia::class, 'compra_id');
+    }
+
+    public function recepciones(): HasMany
+    {
+        return $this->hasMany(CompraRecepcion::class, 'compra_id');
+    }
 }

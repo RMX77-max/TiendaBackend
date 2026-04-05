@@ -38,7 +38,12 @@ class ActualizarCompraRequest extends FormRequest
             'abonos.*.abono_usd' => ['required_with:abonos', 'numeric', 'min:0'],
             'abonos.*.abono_bs' => ['required_with:abonos', 'numeric', 'min:0'],
             'abonos.*.fecha_abono' => ['nullable', 'date'],
+            'abonos.*.comprobante_foto' => ['nullable', 'file', 'image', 'max:5120'],
             'abonos.*.observaciones' => ['nullable', 'string'],
+            'cuotas' => ['nullable', 'array'],
+            'cuotas.*.fecha_vencimiento' => ['required_with:cuotas', 'date'],
+            'cuotas.*.monto_usd' => ['required_with:cuotas', 'numeric', 'min:0'],
+            'cuotas.*.observaciones' => ['nullable', 'string'],
         ];
     }
 }
