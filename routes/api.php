@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ControladorAutenticacion;
 use App\Http\Controllers\Api\ControladorCatalogos;
+use App\Http\Controllers\Api\ControladorCompras;
 use App\Http\Controllers\Api\ControladorProductos;
 use App\Http\Controllers\Api\ControladorTransferencias;
 use App\Http\Controllers\Api\ControladorUsuarios;
@@ -37,6 +38,15 @@ Route::middleware('autenticar.token')->prefix('productos')->group(function () {
     Route::post('/', [ControladorProductos::class, 'registrar']);
     Route::put('/{producto}', [ControladorProductos::class, 'actualizar']);
     Route::delete('/{producto}', [ControladorProductos::class, 'eliminar']);
+});
+
+Route::middleware('autenticar.token')->prefix('compras')->group(function () {
+    Route::get('/formulario', [ControladorCompras::class, 'obtenerFormulario']);
+    Route::get('/', [ControladorCompras::class, 'listar']);
+    Route::post('/', [ControladorCompras::class, 'registrar']);
+    Route::post('/proveedores', [ControladorCompras::class, 'registrarProveedor']);
+    Route::get('/{compra}', [ControladorCompras::class, 'detalle']);
+    Route::put('/{compra}', [ControladorCompras::class, 'actualizar']);
 });
 
 Route::middleware('autenticar.token')->prefix('transferencias')->group(function () {
