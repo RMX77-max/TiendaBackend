@@ -176,6 +176,7 @@ class RecalculadoraCompraService
                 return [
                     'sucursal_id' => $abono['sucursal_id'],
                     'tipo_cambio_abono' => $tipoCambio,
+                    'tipo_cambio_referencia' => $this->redondear($abono['tipo_cambio_referencia'] ?? $tipoCambioGeneral, 6),
                     'moneda_referencia' => $monedaReferencia,
                     'abono_usd' => $abonoUsd,
                     'abono_bs' => $abonoBs,

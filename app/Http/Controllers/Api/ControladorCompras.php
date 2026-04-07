@@ -73,7 +73,7 @@ class ControladorCompras extends Controller
         }
 
         $consulta = Compra::query()
-            ->with(['proveedor', 'detalles'])
+            ->with(['proveedor', 'detalles', 'abonos'])
             ->orderByDesc('fecha_pedido')
             ->orderByDesc('id');
 
@@ -119,10 +119,13 @@ class ControladorCompras extends Controller
         $datos['abonos'] = $this->procesarComprobantesAbonos($datos['abonos'] ?? []);
         $detallesNormalizados = $this->recalculadoraCompraService
             ->normalizarDetalles($datos['detalles'], (float) $datos['tipo_cambio_general']);
-        $abonosNormalizados = $this->recalculadoraCompraService
-            ->normalizarAbonos($datos['abonos'] ?? [], (float) $datos['tipo_cambio_general']);
         $totalProductosUsd = round((float) $detallesNormalizados->sum('subtotal_usd'), 4);
         $totalProductosBs = round((float) $detallesNormalizados->sum('subtotal_bs'), 4);
+        $tipoCambioReferenciaAbonos = $totalProductosUsd > 0
+            ? round($totalProductosBs / $totalProductosUsd, 6)
+            : (float) $datos['tipo_cambio_general'];
+        $abonosNormalizados = $this->recalculadoraCompraService
+            ->normalizarAbonos($datos['abonos'] ?? [], $tipoCambioReferenciaAbonos);
         $cuotasNormalizadas = $this->recalculadoraCompraService
             ->normalizarCuotas($datos['cuotas'] ?? [], $totalProductosUsd, $totalProductosBs);
 
@@ -222,10 +225,13 @@ class ControladorCompras extends Controller
         $datos['abonos'] = $this->procesarComprobantesAbonos($datos['abonos'] ?? []);
         $detallesNormalizados = $this->recalculadoraCompraService
             ->normalizarDetalles($datos['detalles'], (float) $datos['tipo_cambio_general']);
-        $abonosNormalizados = $this->recalculadoraCompraService
-            ->normalizarAbonos($datos['abonos'] ?? [], (float) $datos['tipo_cambio_general']);
         $totalProductosUsd = round((float) $detallesNormalizados->sum('subtotal_usd'), 4);
         $totalProductosBs = round((float) $detallesNormalizados->sum('subtotal_bs'), 4);
+        $tipoCambioReferenciaAbonos = $totalProductosUsd > 0
+            ? round($totalProductosBs / $totalProductosUsd, 6)
+            : (float) $datos['tipo_cambio_general'];
+        $abonosNormalizados = $this->recalculadoraCompraService
+            ->normalizarAbonos($datos['abonos'] ?? [], $tipoCambioReferenciaAbonos);
         $cuotasNormalizadas = $this->recalculadoraCompraService
             ->normalizarCuotas($datos['cuotas'] ?? [], $totalProductosUsd, $totalProductosBs);
 
@@ -307,8 +313,9 @@ class ControladorCompras extends Controller
         }
 
         $datos = $solicitud->validated();
+        $tipoCambioReferenciaCompra = $this->obtenerTipoCambioReferenciaCompra($compra);
         $abonoNormalizado = $this->recalculadoraCompraService
-            ->normalizarAbonos([$datos], (float) $compra->tipo_cambio_general)
+            ->normalizarAbonos([$datos], $tipoCambioReferenciaCompra)
             ->first();
 
         $totalAbonosActualUsd = round((float) $compra->abonos()->sum('abono_usd'), 4);
@@ -347,14 +354,14 @@ class ControladorCompras extends Controller
 
         $datos = $solicitud->validated();
 
-        $compra = DB::transaction(function () use ($compra, $datos) {
+        $compra = DB::transaction(function () use ($solicitud, $compra, $datos) {
             $compra->guias()->create([
                 'fecha_registro' => $datos['fecha_registro'],
                 'monto_bs' => $datos['monto_bs'],
                 'estado' => $datos['estado'],
                 'pagado' => (bool) ($datos['pagado'] ?? false),
                 'observaciones' => $datos['observaciones'] ?? null,
-                'foto_path' => null,
+                'foto_path' => $this->guardarFotoGuia($solicitud),
             ]);
 
             return $this->recalculadoraCompraService->recalcularCompra($compra);
@@ -380,16 +387,28 @@ class ControladorCompras extends Controller
             ], 422);
         }
 
+        if (CompraRecepcion::query()->where('compra_guia_id', $guia->id)->exists()) {
+            return response()->json([
+                'message' => 'Esta guia ya fue usada en una recepcion y no se puede editar.',
+            ], 422);
+        }
+
         $datos = $solicitud->validated();
 
-        $compra = DB::transaction(function () use ($guia, $compra, $datos) {
-            $guia->forceFill([
+        $compra = DB::transaction(function () use ($solicitud, $guia, $compra, $datos) {
+            $atributos = [
                 'fecha_registro' => $datos['fecha_registro'],
                 'monto_bs' => $datos['monto_bs'],
                 'estado' => $datos['estado'],
                 'pagado' => (bool) ($datos['pagado'] ?? false),
                 'observaciones' => $datos['observaciones'] ?? null,
-            ])->save();
+            ];
+
+            if ($nuevaFotoPath = $this->guardarFotoGuia($solicitud, $guia->foto_path)) {
+                $atributos['foto_path'] = $nuevaFotoPath;
+            }
+
+            $guia->forceFill($atributos)->save();
 
             return $this->recalculadoraCompraService->recalcularCompra($compra);
         });
@@ -423,14 +442,16 @@ class ControladorCompras extends Controller
                     'message' => 'Solo se puede recepcionar con una guia en estado recogido.',
                 ], 422);
             }
-        } elseif ((int) $compra->tiempo_entrega_dias > 0) {
-            $existeGuiaRecogida = $compra->guias()->where('estado', CompraGuia::ESTADO_RECOGIDO)->exists();
 
-            if (! $existeGuiaRecogida) {
+            if (CompraRecepcion::query()->where('compra_guia_id', $guia->id)->exists()) {
                 return response()->json([
-                    'message' => 'Esta compra necesita al menos una guia recogida antes de recepcionar.',
+                    'message' => 'La guia seleccionada ya fue usada en una recepcion anterior.',
                 ], 422);
             }
+        } elseif ((int) $compra->tiempo_entrega_dias > 0) {
+            return response()->json([
+                'message' => 'Debes seleccionar una guia recogida para registrar esta recepcion.',
+            ], 422);
         }
 
         $detallesCompra = $compra->detalles()->get()->keyBy('id');
@@ -798,6 +819,7 @@ class ControladorCompras extends Controller
     protected function formatearCompraResumen(Compra $compra): array
     {
         $estadoPago = $this->determinarEstadoPagoCompra($compra);
+        $resumenDiferenciaCambiaria = $this->calcularResumenDiferenciaCambiaria($compra);
 
         return [
             'id' => $compra->id,
@@ -818,6 +840,9 @@ class ControladorCompras extends Controller
             'saldo_pendiente_bs' => (float) $compra->saldo_pendiente_bs,
             'total_pagado_usd' => (float) $compra->total_abonos_usd,
             'total_pagado_bs' => (float) $compra->total_abonos_bs,
+            'referencia_pagado_bs' => $resumenDiferenciaCambiaria['referencia_pagado_bs'],
+            'diferencia_cambiaria_total_bs' => $resumenDiferenciaCambiaria['diferencia_cambiaria_total_bs'],
+            'diferencia_cambiaria_total_tipo' => $resumenDiferenciaCambiaria['diferencia_cambiaria_total_tipo'],
             'estado_pago' => $estadoPago,
             'estado_pago_label' => $this->etiquetaEstadoPagoCompra($estadoPago),
             'total_detalles' => $compra->detalles->count(),
@@ -859,19 +884,7 @@ class ControladorCompras extends Controller
                 ->values()
                 ->all(),
             'abonos' => $compra->abonos
-                ->map(fn (CompraAbono $abono) => [
-                    'id' => $abono->id,
-                    'sucursal_id' => $abono->sucursal_id,
-                    'sucursal' => $abono->sucursal?->nombre,
-                    'tipo_cambio_abono' => (float) $abono->tipo_cambio_abono,
-                    'moneda_referencia' => $abono->moneda_referencia,
-                    'abono_usd' => (float) $abono->abono_usd,
-                    'abono_bs' => (float) $abono->abono_bs,
-                    'fecha_abono' => optional($abono->fecha_abono)?->toDateString(),
-                    'comprobante_path' => $abono->comprobante_path,
-                    'comprobante_url' => $abono->comprobante_path ? Storage::disk('public')->url($abono->comprobante_path) : null,
-                    'observaciones' => $abono->observaciones,
-                ])
+                ->map(fn (CompraAbono $abono) => $this->formatearAbonoCompra($abono))
                 ->values()
                 ->all(),
             'cuotas' => $compra->cuotas
@@ -897,6 +910,8 @@ class ControladorCompras extends Controller
                     'estado' => $guia->estado,
                     'estado_label' => $this->etiquetaEstadoGuia($guia->estado),
                     'pagado' => (bool) $guia->pagado,
+                    'foto_path' => $guia->foto_path,
+                    'foto_url' => $guia->foto_path ? Storage::disk('public')->url($guia->foto_path) : null,
                     'observaciones' => $guia->observaciones,
                 ])
                 ->values()
@@ -927,6 +942,80 @@ class ControladorCompras extends Controller
         ];
     }
 
+    protected function formatearAbonoCompra(CompraAbono $abono): array
+    {
+        $tipoCambioReferencia = $this->obtenerTipoCambioReferenciaCompra($abono->compra);
+        $referenciaBs = round((float) $abono->abono_usd * $tipoCambioReferencia, 4);
+        $diferenciaCambiariaBs = round((float) $abono->abono_bs - $referenciaBs, 4);
+
+        return [
+            'id' => $abono->id,
+            'sucursal_id' => $abono->sucursal_id,
+            'sucursal' => $abono->sucursal?->nombre,
+            'tipo_cambio_abono' => (float) $abono->tipo_cambio_abono,
+            'tipo_cambio_referencia' => $tipoCambioReferencia,
+            'moneda_referencia' => $abono->moneda_referencia,
+            'abono_usd' => (float) $abono->abono_usd,
+            'abono_bs' => (float) $abono->abono_bs,
+            'referencia_bs' => $referenciaBs,
+            'diferencia_cambiaria_bs' => $diferenciaCambiariaBs,
+            'diferencia_cambiaria_tipo' => $this->determinarTipoDiferenciaCambiaria($diferenciaCambiariaBs),
+            'fecha_abono' => optional($abono->fecha_abono)?->toDateString(),
+            'comprobante_path' => $abono->comprobante_path,
+            'comprobante_url' => $abono->comprobante_path ? Storage::disk('public')->url($abono->comprobante_path) : null,
+            'observaciones' => $abono->observaciones,
+        ];
+    }
+
+    protected function calcularResumenDiferenciaCambiaria(Compra $compra): array
+    {
+        $tipoCambioReferencia = $this->obtenerTipoCambioReferenciaCompra($compra);
+        $referenciaPagadoBs = round((float) $compra->abonos->sum(function (CompraAbono $abono) use ($tipoCambioReferencia) {
+            return (float) $abono->abono_usd * $tipoCambioReferencia;
+        }), 4);
+
+        $diferenciaCambiariaTotalBs = round((float) $compra->abonos->sum(function (CompraAbono $abono) use ($tipoCambioReferencia) {
+            $referenciaBs = (float) $abono->abono_usd * $tipoCambioReferencia;
+
+            return (float) $abono->abono_bs - $referenciaBs;
+        }), 4);
+
+        return [
+            'referencia_pagado_bs' => $referenciaPagadoBs,
+            'diferencia_cambiaria_total_bs' => $diferenciaCambiariaTotalBs,
+            'diferencia_cambiaria_total_tipo' => $this->determinarTipoDiferenciaCambiaria($diferenciaCambiariaTotalBs),
+        ];
+    }
+
+    protected function determinarTipoDiferenciaCambiaria(float $diferenciaCambiariaBs): string
+    {
+        if ($diferenciaCambiariaBs > 0.0001) {
+            return 'perdida';
+        }
+
+        if ($diferenciaCambiariaBs < -0.0001) {
+            return 'ahorro';
+        }
+
+        return 'sin_diferencia';
+    }
+
+    protected function obtenerTipoCambioReferenciaCompra(?Compra $compra): float
+    {
+        if (! $compra) {
+            return 0;
+        }
+
+        $totalProductosUsd = (float) $compra->total_productos_usd;
+        $totalProductosBs = (float) $compra->total_productos_bs;
+
+        if ($totalProductosUsd > 0 && $totalProductosBs > 0) {
+            return round($totalProductosBs / $totalProductosUsd, 6);
+        }
+
+        return (float) $compra->tipo_cambio_general;
+    }
+
     protected function determinarEstadoPagoCompra(Compra $compra): string
     {
         $totalPagadoUsd = (float) $compra->total_abonos_usd;
@@ -951,6 +1040,19 @@ class ControladorCompras extends Controller
             'pendiente_por_pagar' => 'Pendiente por pagar',
             default => $estadoPago,
         };
+    }
+
+    protected function guardarFotoGuia(Request $solicitud, ?string $fotoActual = null): ?string
+    {
+        if (! $solicitud->hasFile('foto_guia')) {
+            return null;
+        }
+
+        if ($fotoActual) {
+            Storage::disk('public')->delete($fotoActual);
+        }
+
+        return $solicitud->file('foto_guia')->store('compras/guias', 'public');
     }
 
     protected function etiquetaEstadoGuia(?string $estado): ?string
@@ -1114,3 +1216,6 @@ class ControladorCompras extends Controller
         return 'COMP-'.str_pad((string) $idCompra, 6, '0', STR_PAD_LEFT);
     }
 }
+
+
+

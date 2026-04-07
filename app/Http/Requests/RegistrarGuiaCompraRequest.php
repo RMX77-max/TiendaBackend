@@ -24,6 +24,8 @@ class RegistrarGuiaCompraRequest extends FormRequest
             ])],
             'pagado' => ['nullable', 'boolean'],
             'observaciones' => ['nullable', 'string'],
+            'foto_guia' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
         ];
     }
 }
+

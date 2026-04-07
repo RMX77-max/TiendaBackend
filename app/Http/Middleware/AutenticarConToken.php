@@ -12,7 +12,7 @@ class AutenticarConToken
 {
     public function handle(Request $solicitud, Closure $siguiente): Response
     {
-        $tokenPlano = $solicitud->bearerToken();
+        $tokenPlano = $this->obtenerTokenDesdeSolicitud($solicitud);
 
         if (! $tokenPlano) {
             return new JsonResponse([
@@ -53,5 +53,53 @@ class AutenticarConToken
         $solicitud->attributes->set('token_acceso', $tokenAcceso);
 
         return $siguiente($solicitud);
+    }
+
+    protected function obtenerTokenDesdeSolicitud(Request $solicitud): ?string
+    {
+        $candidatos = [
+            $solicitud->bearerToken(),
+            $solicitud->header('X-Access-Token'),
+            $solicitud->header('Authorization'),
+            $solicitud->server('HTTP_AUTHORIZATION'),
+            $solicitud->server('REDIRECT_HTTP_AUTHORIZATION'),
+        ];
+
+        if (function_exists('getallheaders')) {
+            $cabeceras = getallheaders();
+            $candidatos[] = $cabeceras['Authorization'] ?? null;
+            $candidatos[] = $cabeceras['authorization'] ?? null;
+            $candidatos[] = $cabeceras['X-Access-Token'] ?? null;
+            $candidatos[] = $cabeceras['x-access-token'] ?? null;
+        }
+
+        foreach ($candidatos as $candidato) {
+            $token = $this->normalizarToken($candidato);
+
+            if ($token !== null) {
+                return $token;
+            }
+        }
+
+        return null;
+    }
+
+    protected function normalizarToken(?string $valor): ?string
+    {
+        if (! is_string($valor)) {
+            return null;
+        }
+
+        $valor = trim($valor);
+
+        if ($valor === '') {
+            return null;
+        }
+
+        if (str_starts_with(strtolower($valor), 'bearer ')) {
+            $valor = trim(substr($valor, 7));
+        }
+
+        return $valor !== '' ? $valor : null;
     }
 }

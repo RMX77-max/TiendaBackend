@@ -16,6 +16,7 @@ class CompraAbono extends Model
         'compra_id',
         'sucursal_id',
         'tipo_cambio_abono',
+        'tipo_cambio_referencia',
         'moneda_referencia',
         'abono_usd',
         'abono_bs',
@@ -28,6 +29,7 @@ class CompraAbono extends Model
     {
         return [
             'tipo_cambio_abono' => 'decimal:6',
+            'tipo_cambio_referencia' => 'decimal:6',
             'abono_usd' => 'decimal:6',
             'abono_bs' => 'decimal:6',
             'fecha_abono' => 'date',
