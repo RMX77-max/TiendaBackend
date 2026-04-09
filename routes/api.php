@@ -21,6 +21,7 @@ Route::middleware('autenticar.token')->prefix('usuarios')->group(function () {
     Route::get('/formulario', [ControladorUsuarios::class, 'obtenerFormulario']);
     Route::get('/', [ControladorUsuarios::class, 'listar']);
     Route::post('/', [ControladorUsuarios::class, 'registrar']);
+    Route::patch('/{usuario}/sucursal', [ControladorUsuarios::class, 'actualizarSucursal']);
     Route::patch('/{usuario}/estado', [ControladorUsuarios::class, 'cambiarEstado']);
 });
 
@@ -58,5 +59,6 @@ Route::middleware('autenticar.token')->prefix('compras')->group(function () {
 Route::middleware('autenticar.token')->prefix('transferencias')->group(function () {
     Route::get('/solicitudes', [ControladorTransferencias::class, 'listarSolicitudes']);
     Route::post('/solicitudes', [ControladorTransferencias::class, 'registrarSolicitud']);
+    Route::post('/directa', [ControladorTransferencias::class, 'registrarTransferenciaDirecta']);
     Route::patch('/solicitudes/{solicitudTransferencia}/responder', [ControladorTransferencias::class, 'responderSolicitud']);
 });

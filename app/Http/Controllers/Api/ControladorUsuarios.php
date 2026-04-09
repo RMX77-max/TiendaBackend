@@ -113,6 +113,33 @@ class ControladorUsuarios extends Controller
         ]);
     }
 
+    public function actualizarSucursal(Request $solicitud, User $usuario): JsonResponse
+    {
+        if (! $this->requiereSucursal($usuario->rol)) {
+            return response()->json([
+                'message' => 'Solo vendedores y supervisores pueden cambiar de sucursal.',
+            ], 422);
+        }
+
+        $datos = $solicitud->validate([
+            'sucursal' => [
+                'required',
+                'string',
+                'max:120',
+                Rule::in(array_column($this->obtenerSucursalesDisponibles(), 'value')),
+            ],
+        ]);
+
+        $usuario->forceFill([
+            'sucursal' => $datos['sucursal'],
+        ])->save();
+
+        return response()->json([
+            'message' => 'Sucursal actualizada correctamente.',
+            'usuario' => $this->formatearUsuario($usuario->fresh()),
+        ]);
+    }
+
     protected function requiereSucursal(string $rol): bool
     {
         return in_array($rol, [

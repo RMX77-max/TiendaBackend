@@ -132,6 +132,91 @@ class ControladorTransferencias extends Controller
         ], 201);
     }
 
+    public function registrarTransferenciaDirecta(Request $solicitud): JsonResponse
+    {
+        /** @var User $usuario */
+        $usuario = $solicitud->user();
+
+        if (! in_array($usuario->rol, [User::ROL_GERENTE, User::ROL_AUXILIAR_ADMINISTRATIVO], true)) {
+            return response()->json([
+                'message' => 'Tu rol no tiene permiso para registrar transferencias directas.',
+            ], 403);
+        }
+
+        $datos = $solicitud->validate([
+            'producto_id' => ['required', 'integer', Rule::exists('productos', 'id')],
+            'sucursal_origen_id' => ['required', 'integer', Rule::exists('sucursales', 'id')],
+            'sucursal_destino_id' => ['required', 'integer', Rule::exists('sucursales', 'id')],
+            'cantidad' => ['required', 'integer', 'min:1'],
+            'detalle' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        if ((int) $datos['sucursal_origen_id'] === (int) $datos['sucursal_destino_id']) {
+            return response()->json([
+                'message' => 'La sucursal origen y destino deben ser diferentes.',
+            ], 422);
+        }
+
+        $producto = Producto::query()->findOrFail($datos['producto_id']);
+        $sucursalOrigen = Sucursal::query()->where('activa', true)->find($datos['sucursal_origen_id']);
+        $sucursalDestino = Sucursal::query()->where('activa', true)->find($datos['sucursal_destino_id']);
+
+        if (! $sucursalOrigen || ! $sucursalDestino) {
+            return response()->json([
+                'message' => 'La sucursal origen o destino no es valida o se encuentra inactiva.',
+            ], 422);
+        }
+
+        $cantidad = (int) $datos['cantidad'];
+        $detalle = trim((string) ($datos['detalle'] ?? ''));
+
+        DB::transaction(function () use ($producto, $sucursalOrigen, $sucursalDestino, $cantidad, $detalle, $usuario) {
+            $unidadesDisponibles = ProductoUnidad::query()
+                ->where('producto_id', $producto->id)
+                ->where('sucursal_id', $sucursalOrigen->id)
+                ->where('activo', true)
+                ->where('estado', ProductoUnidad::ESTADO_DISPONIBLE)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($unidadesDisponibles->count() < $cantidad) {
+                throw ValidationException::withMessages([
+                    'cantidad' => 'No existe suficiente stock disponible para realizar esta transferencia.',
+                ]);
+            }
+
+            $unidadesATransferir = $unidadesDisponibles->take($cantidad);
+
+            foreach ($unidadesATransferir as $unidad) {
+                $unidad->forceFill([
+                    'sucursal_id' => $sucursalDestino->id,
+                    'observaciones' => $this->construirObservacionTransferenciaDirecta(
+                        $unidad->observaciones,
+                        $sucursalOrigen,
+                        $sucursalDestino,
+                        $usuario,
+                        $detalle
+                    ),
+                ])->save();
+            }
+        });
+
+        return response()->json([
+            'message' => 'Transferencia directa registrada correctamente.',
+            'transferencia' => [
+                'producto_id' => $producto->id,
+                'producto_modelo' => $producto->modelo,
+                'sucursal_origen_id' => $sucursalOrigen->id,
+                'sucursal_origen' => $sucursalOrigen->nombre,
+                'sucursal_destino_id' => $sucursalDestino->id,
+                'sucursal_destino' => $sucursalDestino->nombre,
+                'cantidad' => $cantidad,
+                'detalle' => $detalle !== '' ? $detalle : null,
+            ],
+        ], 201);
+    }
+
     public function responderSolicitud(Request $solicitud, SolicitudTransferencia $solicitudTransferencia): JsonResponse
     {
         /** @var User $usuario */
@@ -282,6 +367,30 @@ class ControladorTransferencias extends Controller
 
         if ($detalleRespuesta !== '') {
             $lineaBase .= ' Detalle: '.$detalleRespuesta;
+        }
+
+        return filled($observacionActual)
+            ? trim($observacionActual).' | '.$lineaBase
+            : $lineaBase;
+    }
+
+    protected function construirObservacionTransferenciaDirecta(
+        ?string $observacionActual,
+        Sucursal $sucursalOrigen,
+        Sucursal $sucursalDestino,
+        User $usuarioResponsable,
+        string $detalle,
+    ): string {
+        $lineaBase = sprintf(
+            '[%s] Transferencia directa de %s a %s registrada por %s.',
+            now()->format('d/m/Y H:i'),
+            $sucursalOrigen->nombre,
+            $sucursalDestino->nombre,
+            trim($usuarioResponsable->nombre.' '.$usuarioResponsable->apellido)
+        );
+
+        if ($detalle !== '') {
+            $lineaBase .= ' Detalle: '.$detalle;
         }
 
         return filled($observacionActual)
