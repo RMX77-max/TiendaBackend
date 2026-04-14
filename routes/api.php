@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Api\ControladorAutenticacion;
 use App\Http\Controllers\Api\ControladorCatalogos;
+use App\Http\Controllers\Api\ControladorCajas;
 use App\Http\Controllers\Api\ControladorCompras;
 use App\Http\Controllers\Api\ControladorProductos;
 use App\Http\Controllers\Api\ControladorTransferencias;
 use App\Http\Controllers\Api\ControladorUsuarios;
+use App\Http\Controllers\Api\ControladorVentas;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('autenticacion')->group(function () {
@@ -30,6 +32,15 @@ Route::middleware('autenticar.token')->prefix('catalogos')->group(function () {
     Route::get('/sucursales', [ControladorCatalogos::class, 'listarSucursales']);
     Route::post('/marcas', [ControladorCatalogos::class, 'registrarMarca']);
     Route::post('/categorias', [ControladorCatalogos::class, 'registrarCategoria']);
+});
+
+Route::middleware('autenticar.token')->prefix('cajas')->group(function () {
+    Route::get('/formulario', [ControladorCajas::class, 'obtenerFormulario']);
+    Route::get('/', [ControladorCajas::class, 'listar']);
+    Route::get('/movimientos', [ControladorCajas::class, 'listarMovimientos']);
+    Route::post('/', [ControladorCajas::class, 'registrar']);
+    Route::post('/generar-base', [ControladorCajas::class, 'generarBase']);
+    Route::put('/{caja}', [ControladorCajas::class, 'actualizar']);
 });
 
 Route::middleware('autenticar.token')->prefix('productos')->group(function () {
@@ -61,4 +72,10 @@ Route::middleware('autenticar.token')->prefix('transferencias')->group(function 
     Route::post('/solicitudes', [ControladorTransferencias::class, 'registrarSolicitud']);
     Route::post('/directa', [ControladorTransferencias::class, 'registrarTransferenciaDirecta']);
     Route::patch('/solicitudes/{solicitudTransferencia}/responder', [ControladorTransferencias::class, 'responderSolicitud']);
+});
+
+Route::middleware('autenticar.token')->prefix('ventas')->group(function () {
+    Route::get('/formulario', [ControladorVentas::class, 'obtenerFormulario']);
+    Route::get('/', [ControladorVentas::class, 'listar']);
+    Route::post('/', [ControladorVentas::class, 'registrar']);
 });

@@ -14,7 +14,7 @@ return new class extends Migration
             $tabla->foreignId('sucursal_id')->constrained('sucursales')->cascadeOnDelete();
             $tabla->string('numero_serie', 150)->nullable()->unique();
             $tabla->string('estado', 40)->default('disponible');
-            $tabla->string('observaciones', 255)->nullable();
+            $tabla->text('observaciones')->nullable();
             $tabla->timestamp('fecha_ingreso')->nullable();
             $tabla->boolean('activo')->default(true);
             $tabla->timestamps();
@@ -29,3 +29,4 @@ return new class extends Migration
         Schema::dropIfExists('producto_unidades');
     }
 };
+
