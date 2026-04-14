@@ -654,8 +654,18 @@ class ControladorCompras extends Controller
                     $productoId = $linea['producto_id'] ?? $detalleCompra->producto_id;
                     $producto = Producto::query()->findOrFail($productoId);
                     $producto->forceFill([
-                        'costo_usd' => $detalleCompra->precio_unitario_usd,
-                        'costo_bs' => $detalleCompra->precio_unitario_bs,
+                        'costo_usd' => $this->calcularCostoPromedioPonderado(
+                            $producto,
+                            (int) $detalleRecepcion->cantidad_recibida,
+                            (float) $detalleCompra->precio_unitario_usd,
+                            'usd'
+                        ),
+                        'costo_bs' => $this->calcularCostoPromedioPonderado(
+                            $producto,
+                            (int) $detalleRecepcion->cantidad_recibida,
+                            (float) $detalleCompra->precio_unitario_bs,
+                            'bs'
+                        ),
                     ])->save();
                 }
 
@@ -1147,6 +1157,30 @@ class ControladorCompras extends Controller
             ->all();
     }
 
+    protected function calcularCostoPromedioPonderado(Producto $producto, int $cantidadEntrante, float $costoCompra, string $moneda): float
+    {
+        $cantidadActual = ProductoUnidad::query()
+            ->where('producto_id', $producto->id)
+            ->where('activo', true)
+            ->where('estado', ProductoUnidad::ESTADO_DISPONIBLE)
+            ->count();
+
+        if ($cantidadActual <= 0 || $cantidadEntrante <= 0) {
+            return round($costoCompra, 2);
+        }
+
+        $costoActual = $moneda === 'bs'
+            ? (float) $producto->costo_bs
+            : (float) $producto->costo_usd;
+
+        $nuevoCostoPromedio = (
+            ($cantidadActual * $costoActual) +
+            ($cantidadEntrante * $costoCompra)
+        ) / ($cantidadActual + $cantidadEntrante);
+
+        return round($nuevoCostoPromedio, 2);
+    }
+
     protected function asegurarRecepcionAutomaticaSiCompraInmediata(Compra $compra, string $fechaPedido): void
     {
         if ((int) $compra->tiempo_entrega_dias !== 0) {
@@ -1216,6 +1250,8 @@ class ControladorCompras extends Controller
         return 'COMP-'.str_pad((string) $idCompra, 6, '0', STR_PAD_LEFT);
     }
 }
+
+
 
 
 
